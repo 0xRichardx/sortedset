@@ -26,6 +26,7 @@ package sortedset
 
 import (
 	"math/rand"
+	"sync"
 )
 
 type SCORE int64 // the type of score
@@ -38,7 +39,8 @@ type SortedSet struct {
 	tail   *SortedSetNode
 	length int64
 	level  int
-	dict   map[string]*SortedSetNode
+	//dict   map[string]*SortedSetNode
+	dict sync.Map
 }
 
 func createNode(level int, score SCORE, key string, value interface{}) *SortedSetNode {
@@ -153,7 +155,7 @@ func (this *SortedSet) deleteNode(x *SortedSetNode, update [SKIPLIST_MAXLEVEL]*S
 		this.level--
 	}
 	this.length--
-	delete(this.dict, x.key)
+	this.dict.Delete(x.key)
 }
 
 /* Delete an element with matching score/key from the skiplist. */
@@ -185,7 +187,6 @@ func (this *SortedSet) delete(score SCORE, key string) bool {
 func New() *SortedSet {
 	sortedSet := SortedSet{
 		level: 1,
-		dict:  make(map[string]*SortedSetNode),
 	}
 	sortedSet.header = createNode(SKIPLIST_MAXLEVEL, 0, "", nil)
 	return &sortedSet
@@ -238,8 +239,9 @@ func (this *SortedSet) PopMax() *SortedSetNode {
 func (this *SortedSet) AddOrUpdate(key string, score SCORE, value interface{}) bool {
 	var newNode *SortedSetNode = nil
 
-	found := this.dict[key]
-	if found != nil {
+	v, ok := this.dict.Load(key)
+	if ok {
+		found := v.(*SortedSetNode)
 		// score does not change, only update value
 		if found.score == score {
 			found.Value = value
@@ -252,21 +254,21 @@ func (this *SortedSet) AddOrUpdate(key string, score SCORE, value interface{}) b
 	}
 
 	if newNode != nil {
-		this.dict[key] = newNode
+		this.dict.Store(key, newNode)
 	}
-	return found == nil
+	return ok
 }
 
 // Delete element specified by key
 //
 // Time complexity of this method is : O(log(N))
 func (this *SortedSet) Remove(key string) *SortedSetNode {
-	found := this.dict[key]
-	if found != nil {
-		this.delete(found.score, found.key)
-		return found
+	found, ok := this.dict.LoadAndDelete(key)
+	if ok {
+		return found.(*SortedSetNode)
+	} else {
+		return nil
 	}
-	return nil
 }
 
 type GetByScoreRangeOptions struct {
@@ -485,7 +487,10 @@ func (this *SortedSet) GetByRank(rank int, remove bool) *SortedSetNode {
 // If node is not found, nil is returned
 // Time complexity : O(1)
 func (this *SortedSet) GetByKey(key string) *SortedSetNode {
-	return this.dict[key]
+	if v, ok := this.dict.Load(key); ok {
+		return v.(*SortedSetNode)
+	}
+	return nil
 }
 
 // Find the rank of the node specified by key
@@ -496,9 +501,9 @@ func (this *SortedSet) GetByKey(key string) *SortedSetNode {
 // Time complexity of this method is : O(log(N))
 func (this *SortedSet) FindRank(key string) int {
 	var rank int = 0
-	node := this.dict[key]
-	if node != nil {
+	if v, ok := this.dict.Load(key); ok {
 		x := this.header
+		node := v.(*SortedSetNode)
 		for i := this.level - 1; i >= 0; i-- {
 			for x.level[i].forward != nil &&
 				(x.level[i].forward.score < node.score ||
