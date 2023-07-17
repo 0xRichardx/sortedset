@@ -1,3 +1,3 @@
-module github.com/modernstar/sortedset
+module github.com/0xRichardx/sortedset
 
-go 1.17
+go 1.19
